@@ -117,7 +117,7 @@ app.get("/places", async (req, res) => {
 
 app.get("/place/:placeId/detail", async (req, res) => {
   const placeId = req.params.placeId;
-  const [placeInfo] = await pool.execute("SELECT place.name, COUNT(*) FROM place JOIN id ON place.id=event.place_id WHERE place_id=? AND is_finish=?", [placeId, false]);
+  const [placeInfo] = await pool.execute("SELECT place.name, place.description, COUNT(*) AS availableEvent FROM place JOIN event ON place.id=event.place_id WHERE place_id=? AND is_finish=?", [placeId, false]);
   console.log(placeInfo);
   return res.json(
     {success: true,
@@ -136,7 +136,7 @@ app.post("/event", auth, async (req, res) => {
     });
   }
   
-  await pool.execute("INSERT INTO event (event_name, host, place_id, maxnum_teammate, event_start_time, start_location, end_location, path, difficulty, distance, description, is_finish, hiking_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  await pool.execute("INSERT INTO event (event_name, host, place_id, maxnum_teammate, event_start_time, start_location, end_location, path, difficulty, distance, description, is_finish, hiking_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   [eventName, username, placeId, maxNumOfTeamMember, startTime, startPoint, endPoint, path, difficulty, distance, description, false, hikingTime]);
 
   return res.json({ success: true, message: 'Create an event successfully'});
@@ -144,38 +144,58 @@ app.post("/event", auth, async (req, res) => {
 });
 
 app.post("/event/:eventId/member", auth, async (req, res) => {
-  const {userId} = req.userInfo.userId;
+  const {user, userId} = req.userInfo;
   const eventId = parseInt(req.params.eventId);
-  const [result] = await pool.execute("SELECT * FROM join_record WHERE member_id=? AND event_id=? AND status=?", [userId, eventId,"joined"]);
-  if(result.length >= 1){
+
+  const [eventInfo] = await pool.execute("SELECT event.id, host, join_record.member_id, join_record.status FROM event LEFT JOIN join_record ON join_record.event_id=event.id WHERE event.id=?", [eventId]);
+
+  let isOwner = eventInfo.find((record)=>{return record.host===user})
+  if(isOwner){
     return res.json({
       success: false,
-      message: "You have already joined the event"
+      message: "You cannot join the event created by yourself"
     })
   }else{
-    await pool.execute("INSERT INTO join_record (member_id, event_id, status) VALUES (?,?,?)", [userId, eventId, "joined"]);
-    return res.json(
-      {success: true,
-      message: "Event joined"}
-    );
+    let target = eventInfo.find((record)=>{return record["member_id"]===userId;})
+    if(target && target.status === "joined"){
+        return res.json({
+        success: false,
+        message: "You have already joined the event"
+      })
+    }else if(target && target.status === "left"){
+      await pool.execute(`UPDATE join_record SET status="joined"`);
+      return res.json({
+        success: true,
+        message: "Event joined"
+      })
+    }else{
+      await pool.execute("INSERT INTO join_record (member_id, event_id, status) VALUES (?,?,?)", [userId, eventId, "joined"]);
+      return res.json({
+        success: true,
+        message: "Event joined"
+      })
+    }
   }
 });
 
 app.delete("/event/:eventId/member", auth, async (req, res) => {
-  const {userId} = req.userInfo.userId;
+  const {user, userId} = req.userInfo;
   const eventId = parseInt(req.params.eventId);
-  const [result] = await pool.execute("SELECT * FROM join_record WHERE member_id=? AND event_id=?", [userId, eventId]);
-  if(result[0].status === "joined"){
+
+  const [eventInfo] = await pool.execute("SELECT event.id, host, join_record.member_id, join_record.status FROM event LEFT JOIN join_record ON join_record.event_id=event.id WHERE event.id=?", [eventId]);
+
+  let target = eventInfo.find((record)=>{return record["member_id"]===userId;})
+  if(target && target.status === "joined"){
     await pool.execute("UPDATE join_record SET status=? WHERE member_id=? AND event_id=?", ["left", userId, eventId]);
     return res.json({
       success: true,
       message: "You have left the event"
     })
   }else{
-    return res.json(
-      {success: false,
-      message: "Fail to quit the team since you did not join the event"}
-    );
+    return res.json({
+      success: false,
+      message: "Fail to quit the team since you did not join the event"
+    })
   }
 });
 

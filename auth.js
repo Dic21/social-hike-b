@@ -1,3 +1,5 @@
+const jwt = require("jsonwebtoken");
+const jwtSecret = "privateKey";
 // export const checkOwnerToken = (req, res, next) => {
 //   // const checkOwnerToken = (memberId, req, res) => {
 //   const { memberId } = req.params;
