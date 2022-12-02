@@ -108,20 +108,23 @@ app.post("/logout", (req, res) => {});
 
 
 app.get("/places", async (req, res) => {
-  const [placeList] = await pool.execute("SELECT * FROM place");
+  const [placeList] = await pool.execute("SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false GROUP BY place_id) ae ON place.id=ae.place_id;");
   return res.json(
     {success: true,
     place: placeList}
   );
 });
 
-app.get("/place/:placeId/detail", async (req, res) => {
+app.get("/place/:placeId", async (req, res) => {
   const placeId = req.params.placeId;
-  const [placeInfo] = await pool.execute("SELECT place.name, place.description, COUNT(*) AS availableEvent FROM place JOIN event ON place.id=event.place_id WHERE place_id=? AND is_finish=?", [placeId, false]);
-  console.log(placeInfo);
+  const [placeInfo] = await pool.execute("SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false GROUP BY place_id) ae ON place.id=ae.place_id WHERE place.id=?;", [placeId]);
+
+  const [eventList] = await pool.execute("SELECT * FROM event WHERE place_id=?;", [placeId]);
+
   return res.json(
     {success: true,
-    info: placeInfo}
+    info: placeInfo,
+    event: eventList}
   )
 });
 
