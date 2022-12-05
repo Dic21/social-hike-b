@@ -24,6 +24,8 @@ const {auth} = require("./auth");
 const { response } = require("express");
 
 app.use(express.json());
+app.use('/upload-files', express.static('upload-files'));
+app.use(express.urlencoded({ extended: true }));
 
 app.get("/member-list", async (req, res) => {
   const [user] = await pool.query(`select * from member`);
@@ -108,7 +110,7 @@ app.post("/logout", (req, res) => {});
 
 
 app.get("/places", async (req, res) => {
-  const [placeList] = await pool.execute("SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false GROUP BY place_id) ae ON place.id=ae.place_id;");
+  const [placeList] = await pool.execute("SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id;");
   return res.json(
     {success: true,
     place: placeList}
@@ -117,16 +119,33 @@ app.get("/places", async (req, res) => {
 
 app.get("/place/:placeId", async (req, res) => {
   const placeId = req.params.placeId;
-  const [placeInfo] = await pool.execute("SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false GROUP BY place_id) ae ON place.id=ae.place_id WHERE place.id=?;", [placeId]);
+  const [placeInfo] = await pool.execute("SELECT place.name, place.id, place.chi_name, place.description, ae.num, cm.cmnum FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id LEFT JOIN (SELECT COUNT(*) AS cmnum,place_id FROM comment GROUP BY place_id) cm ON place.id=cm.place_id WHERE place.id=?;", [placeId]);
 
-  const [eventList] = await pool.execute("SELECT * FROM event WHERE place_id=?;", [placeId]);
+  const [eventList] = await pool.execute("SELECT * FROM event WHERE place_id=? AND is_finish=false AND event_start_time > NOW() ORDER BY id DESC ;", [placeId]);
 
-  return res.json(
-    {success: true,
+  return res.json({
+    success: true,
     info: placeInfo,
-    event: eventList}
-  )
+    event: eventList
+  });
 });
+
+app.get("/place/:placeId/comment", async(req, res)=>{
+  let placeId = req.params.placeId;
+  let limit = req.query.limit;
+  if(limit){
+    const [cmList] = await pool.execute(`SELECT * FROM comment WHERE place_id=? ORDER BY publish_date DESC LIMIT ${limit}, 2`, [placeId]);
+    return res.json({
+      success: true,
+      cm: cmList
+    });
+  }else{
+    return res.json({
+      success: false,
+      message: 'Please provide offset number'
+    })
+  }
+})
 
 app.post("/event", auth, async (req, res) => {
   const {eventName, placeId, maxNumOfTeamMember, startTime, hikingTime, startPoint, endPoint, path, difficulty, distance, description} = req.body;
@@ -200,6 +219,48 @@ app.delete("/event/:eventId/member", auth, async (req, res) => {
       message: "Fail to quit the team since you did not join the event"
     })
   }
+});
+
+app.post("/place/:placeId/comment", auth, upload.array('pictures'), async(req, res)=>{
+  const {user, userId} = req.userInfo;
+  const placeId = req.params.placeId;
+  const message = req.body.message;
+  const date = new Date();
+
+  if(!message){
+    return res.json({
+      success: false,
+      message: "Please enter your message"
+    })
+  }
+
+  //if pictures included
+  if(req.files.length >= 1){
+    await pool.execute("INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)", [ placeId,
+      user, message, date, true])
+      
+    let prepareParams = [];
+    for (let i = 0; i < req.files.length; i++) {
+      let sql = [];
+      let picPath = `/${req.files[i].destination}${req.files[i].filename}`;
+      sql.push("(?,?,?)");
+      prepareParams.push(id);
+      prepareParams.push(picPath);
+      prepareParams.push(id);
+    };
+    let result = sql.join(",");
+    //await pool.execute(`INSERT INTO album (id, path, commentId) VALUES (?,?),(?,?),(?,?)`,[result]);
+    await pool.execute(`INSERT INTO album (id, path, commentId) VALUES ${result}`,[prepareParams]);
+    return res.json('hewwy');
+  }else{
+    const [cmresult, fieldInfo] = await pool.execute("INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)", [ placeId,
+      user, message, date, false])
+      console.log("cmresult", cmresult.insertId);
+      console.log("fieldInfo", fieldInfo);
+    return res.json('hey');
+  }
+
+
 });
 
 
