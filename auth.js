@@ -13,7 +13,22 @@ export const checkOwnerToken = (req, res, next) => {
   }
 };
 
-//authorization TODO 4
+// //authorization TODO 4
+// export const auth = (req, res, next) => {
+// //   if (memberId === req.userInfo.userId) {
+// //     // return true;
+// //     return next();
+// //   } else {
+// //     return res.status(401).json({
+// //       success: false,
+// //       message: `Invalid token.Token not belongs to member (${memberId})`,
+// //     });
+// //   }
+// // };
+const jwt = require("jsonwebtoken");
+const jwtSecret = "privateKey";
+//authorization
+
 export const auth = (req, res, next) => {
   if (req.headers.authorization) {
     const token = req.headers.authorization.split(" ")[1];
