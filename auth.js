@@ -15,7 +15,21 @@ const jwtSecret = "privateKey";
 //   }
 // };
 
-//authorization TODO 4
+// //authorization TODO 4
+// export const auth = (req, res, next) => {
+// //   if (memberId === req.userInfo.userId) {
+// //     // return true;
+// //     return next();
+// //   } else {
+// //     return res.status(401).json({
+// //       success: false,
+// //       message: `Invalid token.Token not belongs to member (${memberId})`,
+// //     });
+// //   }
+// // };
+
+//authorization
+
 const auth = (req, res, next) => {
   if (req.headers.authorization) {
     const token = req.headers.authorization.split(" ")[1];
