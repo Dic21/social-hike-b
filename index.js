@@ -21,9 +21,10 @@ const app = express();
 const port = 4000;
 
 const { auth } = require("./auth");
-const { response } = require("express");
 
 app.use(express.json());
+app.use("/upload-files", express.static("upload-files"));
+app.use(express.urlencoded({ extended: true }));
 
 app.get("/member-list", async (req, res) => {
   const [user] = await pool.query(`select * from member`);
@@ -82,6 +83,7 @@ app.post("/login", async (req, res) => {
   ]);
 
   console.log(user);
+
   if (user.length === 1) {
     bcrypt.compare(password, user[0].password).then((result) => {
       if (result) {
@@ -132,7 +134,6 @@ app.post("/event", auth, async (req, res) => {
     hikingTime,
     startPoint,
     endPoint,
-    path,
     difficulty,
     distance,
     description,
@@ -153,17 +154,19 @@ app.post("/event", auth, async (req, res) => {
     });
   }
 
-  await pool.execute(
-    "INSERT INTO event (event_name, host, place_id, maxnum_teammate, event_start_time, start_location, end_location, path, difficulty, distance, description, is_finish, hiking_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  const [insertResult] = await pool.execute(
+    "INSERT INTO event (event_name, host, place_id, maxnum_teammate, event_start_time, start_location, end_location, difficulty, distance, description, is_finish, hiking_time) VALUES (?, ?, ?, ?, ?, Point(?,?), Point(?,?), ?, ?, ?, ?, ?)",
     [
       eventName,
       username,
       placeId,
       maxNumOfTeamMember,
       startTime,
-      startPoint,
-      endPoint,
-      path,
+      startPoint.x,
+      startPoint.y,
+      endPoint.x,
+      endPoint.y,
+
       difficulty,
       distance,
       description,
@@ -172,7 +175,31 @@ app.post("/event", auth, async (req, res) => {
     ]
   );
 
-  return res.json({ success: true, message: "Create an event successfully" });
+  return res.json({
+    success: true,
+    insertId: insertResult.insertId,
+    message: "Create an event successfully",
+  });
+});
+
+app.get("/event/:eventId/detail", async (req, res) => {
+  const eventId = req.params.eventId;
+  console.log(eventId);
+  const [eventInfo] = await pool.execute(
+    "SELECT * from event WHERE id=? AND is_finish=?",
+    [eventId, false]
+  );
+
+  return res.json({ success: true, eventInfo });
+});
+
+app.post("/join-record", async (req, res) => {
+  const { eventId } = req.body;
+  const [result] = await pool.execute(
+    "SELECT * FROM join_record WHERE event_id=? ",
+    [eventId]
+  );
+  return res.json({ success: true, length: result.length, result });
 });
 
 app.post("/event/:eventId/member", auth, async (req, res) => {
@@ -196,14 +223,162 @@ app.post("/event/:eventId/member", auth, async (req, res) => {
   }
 });
 
-app.delete("/event/:eventId/member", auth, async (req, res) => {
-  const { userId } = req.userInfo.userId;
+// app.get("/places", async (req, res) => {
+//   const [placeList] = await pool.execute(
+//     "SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id;"
+//   );
+//   return res.json({ success: true, place: placeList });
+// });
+
+// app.get("/place/:placeId", async (req, res) => {
+//   const placeId = req.params.placeId;
+//   const [placeInfo] = await pool.execute(
+//     "SELECT place.name, place.id, place.chi_name, place.description, ae.num, cm.cmnum FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id LEFT JOIN (SELECT COUNT(*) AS cmnum,place_id FROM comment GROUP BY place_id) cm ON place.id=cm.place_id WHERE place.id=?;",
+//     [placeId]
+//   );
+
+//   const [eventList] = await pool.execute(
+//     "SELECT * FROM event WHERE place_id=? AND is_finish=false AND event_start_time > NOW() ORDER BY id DESC ;",
+//     [placeId]
+//   );
+
+//   return res.json({
+//     success: true,
+//     info: placeInfo,
+//     event: eventList,
+//   });
+// });
+
+app.get("/place/:placeId/comment", async (req, res) => {
+  let placeId = req.params.placeId;
+  let limit = req.query.limit;
+  if (limit) {
+    const [cmList] = await pool.execute(
+      `SELECT * FROM comment WHERE place_id=? ORDER BY publish_date DESC LIMIT ${limit}, 2`,
+      [placeId]
+    );
+    return res.json({
+      success: true,
+      cm: cmList,
+    });
+  } else {
+    return res.json({
+      success: false,
+      message: "Please provide offset number",
+    });
+  }
+});
+
+// app.post("/event", auth, async (req, res) => {
+//   const {
+//     eventName,
+//     placeId,
+//     maxNumOfTeamMember,
+//     startTime,
+//     hikingTime,
+//     startPoint,
+//     endPoint,
+//     path,
+//     difficulty,
+//     distance,
+//     description,
+//   } = req.body;
+//   const username = req.userInfo.user;
+
+//   if (
+//     !eventName ||
+//     !placeId ||
+//     !startTime ||
+//     !hikingTime ||
+//     !startPoint ||
+//     !endPoint
+//   ) {
+//     return res.json({
+//       success: false,
+//       message: "Please provide the necessary information",
+//     });
+//   }
+
+//   await pool.execute(
+//     "INSERT INTO event (event_name, host, place_id, maxnum_teammate, event_start_time, start_location, end_location, path, difficulty, distance, description, is_finish, hiking_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+//     [
+//       eventName,
+//       username,
+//       placeId,
+//       maxNumOfTeamMember,
+//       startTime,
+//       startPoint,
+//       endPoint,
+//       path,
+//       difficulty,
+//       distance,
+//       description,
+//       false,
+//       hikingTime,
+//     ]
+//   );
+
+//   return res.json({ success: true, message: "Create an event successfully" });
+// });
+
+app.post("/event/:eventId/member", auth, async (req, res) => {
+  const { user, userId } = req.userInfo;
   const eventId = parseInt(req.params.eventId);
-  const [result] = await pool.execute(
-    "SELECT * FROM join_record WHERE member_id=? AND event_id=?",
-    [userId, eventId]
+
+  const [eventInfo] = await pool.execute(
+    "SELECT event.id, host, join_record.member_id, join_record.status FROM event LEFT JOIN join_record ON join_record.event_id=event.id WHERE event.id=?",
+    [eventId]
   );
-  if (result[0].status === "joined") {
+
+  let isOwner = eventInfo.find((record) => {
+    return record.host === user;
+  });
+  if (isOwner) {
+    return res.json({
+      success: false,
+      message: "You cannot join the event created by yourself",
+    });
+  } else {
+    let target = eventInfo.find((record) => {
+      return record["member_id"] === userId;
+    });
+    if (target && target.status === "joined") {
+      return res.json({
+        success: false,
+        message: "You have already joined the event",
+      });
+    } else if (target && target.status === "left") {
+      await pool.execute(`UPDATE join_record SET status="joined"`);
+      return res.json({
+        success: true,
+        message: "Event joined",
+      });
+    } else {
+      await pool.execute(
+        "INSERT INTO join_record (member_id, event_id, status) VALUES (?,?,?)",
+        [userId, eventId, "joined"]
+      );
+      return res.json({
+        success: true,
+        message: "Event joined",
+      });
+    }
+  }
+});
+
+app.delete("/event/:eventId/member", auth, async (req, res) => {
+  const { user, userId } = req.userInfo;
+  const eventId = parseInt(req.params.eventId);
+
+  const [eventInfo] = await pool.execute(
+    "SELECT event.id, host, join_record.member_id, join_record.status FROM event LEFT JOIN join_record ON join_record.event_id=event.id WHERE event.id=?",
+    [eventId]
+  );
+
+  let target = eventInfo.find((record) => {
+    return record["member_id"] === userId;
+  });
+  if (target && target.status === "joined") {
     await pool.execute(
       "UPDATE join_record SET status=? WHERE member_id=? AND event_id=?",
       ["left", userId, eventId]
@@ -219,6 +394,58 @@ app.delete("/event/:eventId/member", auth, async (req, res) => {
     });
   }
 });
+
+app.post(
+  "/place/:placeId/comment",
+  auth,
+  upload.array("pictures"),
+  async (req, res) => {
+    const { user, userId } = req.userInfo;
+    const placeId = req.params.placeId;
+    const message = req.body.message;
+    const date = new Date();
+
+    if (!message) {
+      return res.json({
+        success: false,
+        message: "Please enter your message",
+      });
+    }
+
+    //if pictures included
+    if (req.files.length >= 1) {
+      await pool.execute(
+        "INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)",
+        [placeId, user, message, date, true]
+      );
+
+      let prepareParams = [];
+      for (let i = 0; i < req.files.length; i++) {
+        let sql = [];
+        let picPath = `/${req.files[i].destination}${req.files[i].filename}`;
+        sql.push("(?,?,?)");
+        prepareParams.push(id);
+        prepareParams.push(picPath);
+        prepareParams.push(id);
+      }
+      let result = sql.join(",");
+      //await pool.execute(`INSERT INTO album (id, path, commentId) VALUES (?,?),(?,?),(?,?)`,[result]);
+      await pool.execute(
+        `INSERT INTO album (id, path, commentId) VALUES ${result}`,
+        [prepareParams]
+      );
+      return res.json("hewwy");
+    } else {
+      const [cmresult, fieldInfo] = await pool.execute(
+        "INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)",
+        [placeId, user, message, date, false]
+      );
+      console.log("cmresult", cmresult.insertId);
+      console.log("fieldInfo", fieldInfo);
+      return res.json("hey");
+    }
+  }
+);
 
 app.get("/event/:eventId", (req, res) => {});
 app.get("/event/:eventId/chat", (req, res) => {});
