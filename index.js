@@ -8,7 +8,7 @@ const multer = require("multer");
 const storage = multer.diskStorage({
   destination: "./upload-files",
   filename: function (req, file, cb) {
-    cb(null, file.originalname);
+    cb(null, Date.now()+file.originalname);
   },
 });
 const saltRound = 12;
@@ -134,7 +134,8 @@ app.get("/place/:placeId/comment", async(req, res)=>{
   let placeId = req.params.placeId;
   let limit = req.query.limit;
   if(limit){
-    const [cmList] = await pool.execute(`SELECT * FROM comment WHERE place_id=? ORDER BY publish_date DESC LIMIT ${limit}, 2`, [placeId]);
+    const [cmList] = await pool.execute(`SELECT * FROM comment LEFT JOIN  (SELECT comment_id, JSON_ARRAYAGG(path) AS path from album GROUP BY comment_id) al ON al.comment_id=comment.id WHERE place_id=? ORDER BY publish_date DESC LIMIT ${limit}, 2`, [placeId]);
+    
     return res.json({
       success: true,
       cm: cmList
@@ -235,29 +236,34 @@ app.post("/place/:placeId/comment", auth, upload.array('pictures'), async(req, r
   }
 
   //if pictures included
-  if(req.files.length >= 1){
-    await pool.execute("INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)", [ placeId,
+  if(req.files && req.files.length >= 1){
+    const [cmresult, fieldInfo] = await pool.execute("INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)", [ placeId,
       user, message, date, true])
-      
+    let sql = [];
     let prepareParams = [];
     for (let i = 0; i < req.files.length; i++) {
-      let sql = [];
-      let picPath = `/${req.files[i].destination}${req.files[i].filename}`;
+      let id = Math.floor(Date.now() * Math.random() / 1000);
+      let picPath = `${req.files[i].destination}/${req.files[i].filename}`;
       sql.push("(?,?,?)");
-      prepareParams.push(id);
+      prepareParams.push(`i${id}`);
       prepareParams.push(picPath);
-      prepareParams.push(id);
+      prepareParams.push(cmresult.insertId);
     };
     let result = sql.join(",");
-    //await pool.execute(`INSERT INTO album (id, path, commentId) VALUES (?,?),(?,?),(?,?)`,[result]);
-    await pool.execute(`INSERT INTO album (id, path, commentId) VALUES ${result}`,[prepareParams]);
-    return res.json('hewwy');
+    await pool.execute(`INSERT INTO album (id, path, comment_id) VALUES ${result}`, prepareParams);
+    return res.json({
+      success: true,
+      message: "You have posted a comment with image"
+    });
   }else{
     const [cmresult, fieldInfo] = await pool.execute("INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)", [ placeId,
       user, message, date, false])
       console.log("cmresult", cmresult.insertId);
       console.log("fieldInfo", fieldInfo);
-    return res.json('hey');
+    return res.json({
+      success: true,
+      message: 'You have posted a comment'
+    });
   }
 
 
