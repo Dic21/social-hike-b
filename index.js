@@ -110,21 +110,6 @@ app.post("/login", async (req, res) => {
 });
 app.post("/logout", (req, res) => {});
 
-app.get("/places", async (req, res) => {
-  const [placeList] = await pool.execute("SELECT * FROM place");
-  return res.json({ success: true, place: placeList });
-});
-
-app.get("/place/:placeId/detail", async (req, res) => {
-  const placeId = req.params.placeId;
-  const [placeInfo] = await pool.execute(
-    "SELECT place.name, COUNT(*) FROM place JOIN id ON place.id=event.place_id WHERE place_id=? AND is_finish=?",
-    [placeId, false]
-  );
-  console.log(placeInfo);
-  return res.json({ success: true, info: placeInfo });
-});
-
 app.post("/event", auth, async (req, res) => {
   const {
     eventName,
@@ -223,31 +208,31 @@ app.post("/event/:eventId/member", auth, async (req, res) => {
   }
 });
 
-// app.get("/places", async (req, res) => {
-//   const [placeList] = await pool.execute(
-//     "SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id;"
-//   );
-//   return res.json({ success: true, place: placeList });
-// });
+app.get("/places", async (req, res) => {
+  const [placeList] = await pool.execute(
+    "SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id;"
+  );
+  return res.json({ success: true, place: placeList });
+});
 
-// app.get("/place/:placeId", async (req, res) => {
-//   const placeId = req.params.placeId;
-//   const [placeInfo] = await pool.execute(
-//     "SELECT place.name, place.id, place.chi_name, place.description, ae.num, cm.cmnum FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id LEFT JOIN (SELECT COUNT(*) AS cmnum,place_id FROM comment GROUP BY place_id) cm ON place.id=cm.place_id WHERE place.id=?;",
-//     [placeId]
-//   );
+app.get("/place/:placeId", async (req, res) => {
+  const placeId = req.params.placeId;
+  const [placeInfo] = await pool.execute(
+    "SELECT place.name, place.id, place.chi_name, place.description, ae.num, cm.cmnum FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id LEFT JOIN (SELECT COUNT(*) AS cmnum,place_id FROM comment GROUP BY place_id) cm ON place.id=cm.place_id WHERE place.id=?;",
+    [placeId]
+  );
 
-//   const [eventList] = await pool.execute(
-//     "SELECT * FROM event WHERE place_id=? AND is_finish=false AND event_start_time > NOW() ORDER BY id DESC ;",
-//     [placeId]
-//   );
+  const [eventList] = await pool.execute(
+    "SELECT * FROM event WHERE place_id=? AND is_finish=false AND event_start_time > NOW() ORDER BY id DESC ;",
+    [placeId]
+  );
 
-//   return res.json({
-//     success: true,
-//     info: placeInfo,
-//     event: eventList,
-//   });
-// });
+  return res.json({
+    success: true,
+    info: placeInfo,
+    event: eventList,
+  });
+});
 
 app.get("/place/:placeId/comment", async (req, res) => {
   let placeId = req.params.placeId;
@@ -395,11 +380,7 @@ app.delete("/event/:eventId/member", auth, async (req, res) => {
   }
 });
 
-app.post(
-  "/place/:placeId/comment",
-  auth,
-  upload.array("pictures"),
-  async (req, res) => {
+app.post("/place/:placeId/comment", auth, upload.array("pictures"), async (req, res) => {
     const { user, userId } = req.userInfo;
     const placeId = req.params.placeId;
     const message = req.body.message;
