@@ -14,7 +14,7 @@ module.exports = function (socketIO) {
 
     socket.on("message", (data) => {
       console.log(data);
-      socketIO.to(data.room).emit("messageResponse", data);
+      socket.to(data.room).emit("messageResponse", data);
     });
 
     socket.on("typing", (data) =>
