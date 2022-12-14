@@ -8,7 +8,7 @@ const multer = require("multer");
 const storage = multer.diskStorage({
   destination: "./upload-files",
   filename: function (req, file, cb) {
-    cb(null, Date.now()+file.originalname);
+    cb(null, Date.now() + file.originalname);
   },
 });
 const saltRound = 12;
@@ -19,6 +19,11 @@ dotenv.config();
 
 const app = express();
 const port = 4000;
+const { createServer } = require("http");
+const { Server } = require("socket.io");
+const http = createServer(app);
+const io = new Server(http);
+require("./chatroom-socket-server")(io);
 
 const { auth } = require("./auth");
 
@@ -108,7 +113,9 @@ app.post("/login", async (req, res) => {
     return res.json({ success: false, message: "Incorrect username/password" });
   }
 });
-app.post("/logout", (req, res) => {});
+app.post("/logout", (req, res) => {
+  res.json({ success: true, message: "logout successfully" });
+});
 
 app.post("/event", auth, async (req, res) => {
   const {
@@ -169,6 +176,7 @@ app.post("/event", auth, async (req, res) => {
 
 app.get("/event/:eventId/detail", async (req, res) => {
   const eventId = req.params.eventId;
+
   console.log(eventId);
   const [eventInfo] = await pool.execute(
     "SELECT * from event WHERE id=? AND is_finish=?",
@@ -176,6 +184,12 @@ app.get("/event/:eventId/detail", async (req, res) => {
   );
 
   return res.json({ success: true, eventInfo });
+});
+
+app.get("/get-current-user", auth, async (req, res) => {
+  // console.log(req.userInfo.user);
+
+  return res.json({ user: req.userInfo });
 });
 
 app.post("/join-record", async (req, res) => {
@@ -237,9 +251,12 @@ app.get("/place/:placeId", async (req, res) => {
 app.get("/place/:placeId/comment", async (req, res) => {
   let placeId = req.params.placeId;
   let limit = req.query.limit;
-  if(limit){
-    const [cmList] = await pool.execute(`SELECT * FROM comment LEFT JOIN  (SELECT comment_id, JSON_ARRAYAGG(path) AS path from album GROUP BY comment_id) al ON al.comment_id=comment.id WHERE place_id=? ORDER BY publish_date DESC LIMIT ${limit}, 2`, [placeId]);
-    
+  if (limit) {
+    const [cmList] = await pool.execute(
+      `SELECT * FROM comment LEFT JOIN  (SELECT comment_id, JSON_ARRAYAGG(path) AS path from album GROUP BY comment_id) al ON al.comment_id=comment.id WHERE place_id=? ORDER BY publish_date DESC LIMIT ${limit}, 2`,
+      [placeId]
+    );
+
     return res.json({
       success: true,
       cm: cmList,
@@ -378,7 +395,11 @@ app.delete("/event/:eventId/member", auth, async (req, res) => {
   }
 });
 
-app.post("/place/:placeId/comment", auth, upload.array("pictures"), async (req, res) => {
+app.post(
+  "/place/:placeId/comment",
+  auth,
+  upload.array("pictures"),
+  async (req, res) => {
     const { user, userId } = req.userInfo;
     const placeId = req.params.placeId;
     const message = req.body.message;
@@ -391,51 +412,73 @@ app.post("/place/:placeId/comment", auth, upload.array("pictures"), async (req, 
       });
     }
 
-  //if pictures included
-  if(req.files && req.files.length >= 1){
-    const [cmresult, fieldInfo] = await pool.execute("INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)", [ placeId,
-      user, message, date, true])
-    let sql = [];
-    let prepareParams = [];
-    for (let i = 0; i < req.files.length; i++) {
-      let id = Math.floor(Date.now() * Math.random() / 1000);
-      let picPath = `${req.files[i].destination}/${req.files[i].filename}`;
-      sql.push("(?,?,?)");
-      prepareParams.push(`i${id}`);
-      prepareParams.push(picPath);
-      prepareParams.push(cmresult.insertId);
-    };
-    let result = sql.join(",");
-    await pool.execute(`INSERT INTO album (id, path, comment_id) VALUES ${result}`, prepareParams);
-    return res.json({
-      success: true,
-      message: "You have posted a comment with image"
-    });
-  }else{
-    const [cmresult, fieldInfo] = await pool.execute("INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)", [ placeId,
-      user, message, date, false])
+    //if pictures included
+    if (req.files && req.files.length >= 1) {
+      const [cmresult, fieldInfo] = await pool.execute(
+        "INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)",
+        [placeId, user, message, date, true]
+      );
+      let sql = [];
+      let prepareParams = [];
+      for (let i = 0; i < req.files.length; i++) {
+        let id = Math.floor((Date.now() * Math.random()) / 1000);
+        let picPath = `${req.files[i].destination}/${req.files[i].filename}`;
+        sql.push("(?,?,?)");
+        prepareParams.push(`i${id}`);
+        prepareParams.push(picPath);
+        prepareParams.push(cmresult.insertId);
+      }
+      let result = sql.join(",");
+      await pool.execute(
+        `INSERT INTO album (id, path, comment_id) VALUES ${result}`,
+        prepareParams
+      );
+      return res.json({
+        success: true,
+        message: "You have posted a comment with image",
+      });
+    } else {
+      const [cmresult, fieldInfo] = await pool.execute(
+        "INSERT INTO comment ( place_id, publisher, message, publish_date, is_photo) VALUES (?,?,?,?,?)",
+        [placeId, user, message, date, false]
+      );
       console.log("cmresult", cmresult.insertId);
       console.log("fieldInfo", fieldInfo);
-    return res.json({
-      success: true,
-      message: 'You have posted a comment'
-    });
+      return res.json({
+        success: true,
+        message: "You have posted a comment",
+      });
+    }
   }
-});
+);
 
 app.get("/event/:eventId", (req, res) => {});
 app.get("/event/:eventId/chat", (req, res) => {});
 app.get("/event/:eventId/ member/:memberId/last-location", (req, res) => {});
 
-app.listen(port, () => {
+http.listen(port, () => {
+  // console.log(`Server listening on ${port}`);
   console.log(`Server running on port ${port}`);
   pool = mysql
     .createPool({
       host: "database-1.cywpdlwq4ycg.ap-northeast-1.rds.amazonaws.com",
-      port: "3306",
+      port: 3306,
       user: process.env.DATABASE_USER,
       password: process.env.DATABASE_PASSWORD,
       database: "project",
     })
     .promise();
 });
+
+// app.listen(port, () => {
+//   console.log(`Server running on port ${port}`);
+//   pool = mysql
+//     .createPool({
+//       host: "database-1.cywpdlwq4ycg.ap-northeast-1.rds.amazonaws.com",
+//       port: "3306",
+//       user: process.env.DATABASE_USER,
+//       password: process.env.DATABASE_PASSWORD,
+//       database: "project",
+//     })
+//     .promise();
+// });
