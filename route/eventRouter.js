@@ -1,0 +1,173 @@
+const express = require('express');
+const router = express.Router();
+let { pool } = require("../database");
+const { auth } = require("../auth");
+
+router.post("/", auth, async (req, res) => {
+  const {
+    eventName,
+    placeId,
+    maxNumOfTeamMember,
+    startTime,
+    hikingTime,
+    startPoint,
+    endPoint,
+    difficulty,
+    distance,
+    description,
+  } = req.body;
+  const username = req.userInfo.user;
+
+  if (
+    !eventName ||
+    !placeId ||
+    !startTime ||
+    !hikingTime ||
+    !startPoint ||
+    !endPoint
+  ) {
+    return res.json({
+      success: false,
+      message: "Please provide the necessary information",
+    });
+  }
+
+  const [insertResult] = await pool.execute(
+    "INSERT INTO event (event_name, host, place_id, maxnum_teammate, event_start_time, start_location, end_location, difficulty, distance, description, is_finish, hiking_time) VALUES (?, ?, ?, ?, ?, Point(?,?), Point(?,?), ?, ?, ?, ?, ?)",
+    [
+      eventName,
+      username,
+      placeId,
+      maxNumOfTeamMember,
+      startTime,
+      startPoint.x,
+      startPoint.y,
+      endPoint.x,
+      endPoint.y,
+
+      difficulty,
+      distance,
+      description,
+      false,
+      hikingTime,
+    ]
+  );
+
+  return res.json({
+    success: true,
+    insertId: insertResult.insertId,
+    message: "Create an event successfully",
+  });
+});
+
+router.get("/:eventId/detail", async (req, res) => {
+  const eventId = req.params.eventId;
+
+  console.log(eventId);
+  const [eventInfo] = await pool.execute(
+    "SELECT * from event WHERE id=? AND is_finish=?",
+    [eventId, false]
+  );
+
+  return res.json({ success: true, eventInfo });
+});
+
+router.post("/:eventId/member", auth, async (req, res) => {
+  const { userId } = req.userInfo.userId;
+  const eventId = parseInt(req.params.eventId);
+  const [result] = await pool.execute(
+    "SELECT * FROM join_record WHERE member_id=? AND event_id=? AND status=?",
+    [userId, eventId, "joined"]
+  );
+  if (result.length >= 1) {
+    return res.json({
+      success: false,
+      message: "You have already joined the event",
+    });
+  } else {
+    await pool.execute(
+      "INSERT INTO join_record (member_id, event_id, status) VALUES (?,?,?)",
+      [userId, eventId, "joined"]
+    );
+    return res.json({ success: true, message: "Event joined" });
+  }
+});
+
+// router.post("/:eventId/member", auth, async (req, res) => {
+//   const { user, userId } = req.userInfo;
+//   const eventId = parseInt(req.params.eventId);
+
+//   const [eventInfo] = await pool.execute(
+//     "SELECT event.id, host, join_record.member_id, join_record.status FROM event LEFT JOIN join_record ON join_record.event_id=event.id WHERE event.id=?",
+//     [eventId]
+//   );
+
+//   let isOwner = eventInfo.find((record) => {
+//     return record.host === user;
+//   });
+//   if (isOwner) {
+//     return res.json({
+//       success: false,
+//       message: "You cannot join the event created by yourself",
+//     });
+//   } else {
+//     let target = eventInfo.find((record) => {
+//       return record["member_id"] === userId;
+//     });
+//     if (target && target.status === "joined") {
+//       return res.json({
+//         success: false,
+//         message: "You have already joined the event",
+//       });
+//     } else if (target && target.status === "left") {
+//       await pool.execute(`UPDATE join_record SET status="joined"`);
+//       return res.json({
+//         success: true,
+//         message: "Event joined",
+//       });
+//     } else {
+//       await pool.execute(
+//         "INSERT INTO join_record (member_id, event_id, status) VALUES (?,?,?)",
+//         [userId, eventId, "joined"]
+//       );
+//       return res.json({
+//         success: true,
+//         message: "Event joined",
+//       });
+//     }
+//   }
+// });
+
+router.delete("/:eventId/member", auth, async (req, res) => {
+  const { user, userId } = req.userInfo;
+  const eventId = parseInt(req.params.eventId);
+
+  const [eventInfo] = await pool.execute(
+    "SELECT event.id, host, join_record.member_id, join_record.status FROM event LEFT JOIN join_record ON join_record.event_id=event.id WHERE event.id=?",
+    [eventId]
+  );
+
+  let target = eventInfo.find((record) => {
+    return record["member_id"] === userId;
+  });
+  if (target && target.status === "joined") {
+    await pool.execute(
+      "UPDATE join_record SET status=? WHERE member_id=? AND event_id=?",
+      ["left", userId, eventId]
+    );
+    return res.json({
+      success: true,
+      message: "You have left the event",
+    });
+  } else {
+    return res.json({
+      success: false,
+      message: "Fail to quit the team since you did not join the event",
+    });
+  }
+});
+
+// router.get("/:eventId/chat", (req, res) => {});
+// router.get("/:eventId/ member/:memberId/last-location", (req, res) => {});
+
+module.exports = router;
