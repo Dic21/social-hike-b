@@ -11,20 +11,23 @@ const { Server } = require("socket.io");
 const http = createServer(app);
 const io = new Server(http);
 require("./chatroom-socket-server")(io);
+const bodyParser = require("body-parser");
 
-const userRouter = require('./route/userRouter');
-const eventRouter = require('./route/eventRouter');
-const placeRouter = require('./route/placeRouter');
-
+const userRouter = require("./route/userRouter");
+const eventRouter = require("./route/eventRouter");
+const placeRouter = require("./route/placeRouter");
+const walkieRouter = require("./route/walkieRouter");
 
 app.use(express.json());
+app.use(express.static("public"));
+app.use(bodyParser.json());
 app.use("/upload-files", express.static("upload-files"));
 app.use(express.urlencoded({ extended: true }));
 
-
-app.use('/', userRouter);
-app.use('/event', eventRouter);
-app.use('/place', placeRouter);
+app.use("/", userRouter);
+app.use("/event", eventRouter);
+app.use("/place", placeRouter);
+app.use("/walkie", walkieRouter);
 
 http.listen(port, () => {
   // console.log(`Server listening on ${port}`);

@@ -1,4 +1,4 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 let { pool } = require("../database");
 const { auth } = require("../auth");
@@ -73,8 +73,9 @@ router.get("/:eventId/detail", async (req, res) => {
 });
 
 router.post("/:eventId/member", auth, async (req, res) => {
-  const { userId } = req.userInfo.userId;
+  const { userId } = req.userInfo;
   const eventId = parseInt(req.params.eventId);
+  console.log(userId, eventId);
   const [result] = await pool.execute(
     "SELECT * FROM join_record WHERE member_id=? AND event_id=? AND status=?",
     [userId, eventId, "joined"]
@@ -170,4 +171,49 @@ router.delete("/:eventId/member", auth, async (req, res) => {
 // router.get("/:eventId/chat", (req, res) => {});
 // router.get("/:eventId/ member/:memberId/last-location", (req, res) => {});
 
+router.post("/:eventId/location", auth, async (req, res) => {
+  const { user } = req.userInfo;
+  const eventId = parseInt(req.params.eventId);
+  const { lat, lng } = req.body;
+
+  const [result] = await pool.execute(
+    "SELECT * from location WHERE event_id=? and name=?",
+    [eventId, user]
+  );
+
+  if (result) {
+    const [deleteLocation] = await pool.execute(
+      "delete from location WHERE event_id=? and name=?",
+      [eventId, user]
+    );
+    const [insertLocation] = await pool.execute(
+      "INSERT INTO location (event_id, name,location) VALUES (?, ?, Point(?,?))",
+      [eventId, user, lat, lng]
+    );
+  } else {
+    const [insertLocation] = await pool.execute(
+      "INSERT INTO location (event_id, name,location) VALUES (?, ?, Point(?,?))",
+      [eventId, user, lat, lng]
+    );
+  }
+
+  return res.json({ sucess: true, message: "Location recorded successfully" });
+});
+
+router.get(
+  "/:eventId/participants-current-location",
+  auth,
+  async (req, res) => {
+    const eventId = parseInt(req.params.eventId);
+
+    const [location] = await pool.execute(
+      "SELECT * from location WHERE event_id=?",
+      [eventId]
+    );
+    return res.json({
+      sucess: true,
+      message: location,
+    });
+  }
+);
 module.exports = router;
