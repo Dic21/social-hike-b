@@ -105,6 +105,17 @@ router.post("/join-record", async (req, res) => {
     return res.json({ success: true, length: result.length, result });
 });
 
+router.get("/member-record", auth, async (req, res) => {
+  const memberId = req.userInfo.userId
+  const [eventInfo] = await pool.execute(
+    `SELECT * from event JOIN join_record ON event.id = join_record.event_id where member_id=? AND status=?;`,
+    [memberId,"joined"]);
+
+  return res.json({success: true,eventInfo});
+
+});
+
+
 router.get("/places", async (req, res) => {
     const [placeList] = await pool.execute(
       "SELECT place.name, place.id, place.chi_name, place.description, ae.num FROM place LEFT JOIN (SELECT place_id, COUNT(*) AS num FROM event WHERE is_finish=false AND event_start_time > NOW() GROUP BY place_id) ae ON place.id=ae.place_id;"
