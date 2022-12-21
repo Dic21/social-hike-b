@@ -84,34 +84,49 @@ router.post("/:eventId/member", auth, async (req, res) => {
   let isOwner = eventInfo.find((record) => {
     return record.host === user;
   });
-  if (isOwner) {
+  // if (isOwner) {
+  //   await pool.execute(
+  //     "INSERT INTO join_record (member_id, event_id, status) VALUES (?,?,?)",
+  //     [userId, eventId, "joined"]
+  //   );
+  //   return res.json({
+  //     success: true,
+  //     message: "You join the event as a host",
+  //   });
+  // } else {
+  let target = eventInfo.find((record) => {
+    return record["member_id"] === userId;
+  });
+  if (target && target.status === "joined") {
     return res.json({
       success: false,
-      message: "You cannot join the event created by yourself",
+      message: "You have already joined the event",
+      user,
+    });
+  } else if (target && target.status === "left") {
+    await pool.execute(`UPDATE join_record SET status="joined"`);
+    return res.json({
+      success: true,
+      message: "Event joined",
+      user,
     });
   } else {
-    let target = eventInfo.find((record) => {
-      return record["member_id"] === userId;
-    });
-    if (target && target.status === "joined") {
-      return res.json({
-        success: false,
-        message: "You have already joined the event",
-      });
-    } else if (target && target.status === "left") {
-      await pool.execute(`UPDATE join_record SET status="joined"`);
+    await pool.execute(
+      "INSERT INTO join_record (member_id, event_id, status) VALUES (?,?,?)",
+      [userId, eventId, "joined"]
+    );
+
+    if (isOwner) {
       return res.json({
         success: true,
-        message: "Event joined",
+        message: "You joined the event as a host",
+        user,
       });
     } else {
-      await pool.execute(
-        "INSERT INTO join_record (member_id, event_id, status) VALUES (?,?,?)",
-        [userId, eventId, "joined"]
-      );
       return res.json({
         success: true,
         message: "Event joined",
+        user,
       });
     }
   }
