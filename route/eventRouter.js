@@ -72,7 +72,6 @@ router.get("/:eventId/detail", async (req, res) => {
   return res.json({ success: true, eventInfo });
 });
 
-
 router.post("/:eventId/member", auth, async (req, res) => {
   const { user, userId } = req.userInfo;
   const eventId = parseInt(req.params.eventId);
@@ -143,7 +142,7 @@ router.delete("/:eventId/member", auth, async (req, res) => {
     return res.json({
       success: false,
       message: "Fail to quit the team since you did not join the event",
-      target
+      target,
     });
   }
 });
